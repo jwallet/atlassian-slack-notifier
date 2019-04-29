@@ -1,0 +1,17 @@
+{
+    "name": "sprinkle-mastodon-notifierbot",
+    "version": "1.0.0",
+    "description": "Slackbot to forward notifications",
+    "license": "MIT",
+    "repository": "https://sprinkle-mastodon.glitch.me/",
+    "scripts": {
+      "start": "node index.js"
+    },
+    "author": "Mathieu Larouche Dubé <mathieu.larouche.dube@vooban.com>",
+    "dependencies": {
+      "body-parser": "^1.18.3",
+      "dotenv": "^6.0.0",
+      "express": "^4.16.3",
+      "request": "^2.87.0"
+    }
+  }
