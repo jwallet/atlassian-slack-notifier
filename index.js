@@ -1,46 +1,84 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const request = require("request");
-
-const notifier = require("./slack-notifier.js");
+const express = require("express");
+const bodyParser = require("body-parser");
 const handlers = require("./handlers.js");
 
+const logger = require("./log.js");
+
 const app = express();
-app.use(bodyParser.urlencoded({extended: true}));
+app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
-app.post('/', (req, res) => {
-  const event = req.body.event;
-  if (event.type !== 'message' || event.channel !== process.env.NOTIFICATION_CHANNEL) return;
-  if (event.subtype == 'message_changed') return;
+app.get("/ping", (req, res) => {
+  logger.info("Ping request");
+  res.send("pong");
+});
 
-  if (event.subtype === 'bot_message') {
-    switch (event.bot_id) {
-      case process.env.BOT_ID_BITBUCKET:
+app.get("/envs", (req, res) => {
+  const envs = [
+    ["PORT", !!process.env.PORT].join(": "),
+    ["READ_CHANNEL", !!process.env.READ_CHANNEL].join(": "),
+    ["SLACK_AUTH_TOKEN_", !!process.env.SLACK_AUTH_TOKEN].join(": "),
+  ].join("</p><p>");
+  res.send(`<p>${envs}</p>`);
+});
+
+app.post("/", (req, res) => {
+  if (req.body.type === "url_verification") {
+    res.status(200).send(req.body.challenge);
+    return;
+  }
+
+  const event = "event" in req.body ? req.body.event : req.body;
+  const isMessage = event.type === "message";
+  const isChannelToMonitor = event.channel === process.env.READ_CHANNEL;
+  const isMessageChanged = event.subtype === "message_changed";
+
+  if (!(isMessage && isChannelToMonitor && !isMessageChanged)) {
+    res.status(400).send("This kind of message is not handled by the bot.");
+    return;
+  }
+
+  logger.info("Processing message", { event: event });
+
+  let botName = event.username;
+  let eventType = event.subtype;
+
+  if (event.bot_id) {
+    botName = event.bot_profile.name;
+    eventType = "bot_message";
+  }
+
+  if (eventType === "bot_message") {
+    switch (botName) {
+      case "Bitbucket Cloud":
         handlers.handleBitbucketMessage(event);
         break;
-      case process.env.BOT_ID_JIRA:
+      case "Jira Cloud":
         handlers.handleJiraMessage(event);
         break;
-      case process.env.BOT_ID_CONFLUENCE:
+      case "Confluence Cloud":
         handlers.handleConfluenceMessage(event);
         break;
-      case process.env.BOT_ID_INVISION:
+      case "InVision App":
         handlers.handleInvisionMessage(event);
         break;
       default:
-        console.log("Unknown bot", event);
+        logger.warn(`Unkown bot: ${event.username} (${event.bot_id})`);
         break;
     }
   } else {
-    console.log(event);
-    console.log("Recieved a regular message:", event.text, "by", event.user, ". Ignoring.");
+    logger.info(`Received a regular message by ${event.user}. Ignoring.`, {
+      text: event.text,
+      author: event.user,
+    });
   }
-  res.json();
+  res.status(200).json();
   return;
 });
 
-const PORT = 3000;
-app.listen(process.env.PORT, function() {
-  console.log('Bot is listening on port ' + PORT);
+const port = 3000;
+app.listen(process.env.PORT || port, function () {
+  const message = "Bot is listening on port " + (process.env.PORT || port);
+  console.log(message);
+  logger.info(message);
 });

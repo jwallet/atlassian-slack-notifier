@@ -1,76 +1,87 @@
-const notifier = require('./slack-notifier.js');
+const notifier = require("./slack-notifier.js");
+const _deburr = require("lodash.deburr");
+const _words = require("lodash.words");
 
-const handleMessage = (event, userMatchRegex) => {
-  var msg = event.attachments ? event.attachments[0] : event;
-  const matches = msg.text.match(userMatchRegex);
-
-  if (matches && matches.length >= 1) {
-
-    const targets = matches.filter((v, i, a) => a.indexOf(v) === i);
-
-    for(var i=0; i<targets.length; i++) {
-      notifier.notify(event, targets[i].replace('<','').replace('>',''), msg.text);
-    }
-  }
-
-}
-
-const getReviewers = (message) => {
-  if (!(message.fields && message.fields.length >= 1)) return '';
-
-  for (var i=0; i<message.fields.length; i++) {
-    var field = message.fields[i];
-    if (field.title === 'Reviewers') {
-      return field.value;
-    }
-  }
-  return '';
+const getJiraMessageQuote = (event) => {
+  const { blocks } = event;
+  if (!Array.isArray(blocks) || blocks.length < 2) return undefined;
+  // blocks[0]: is there header with <slack/> tag as text
+  return blocks[1].text;
 };
 
-const handleBitbucketMessage = (event) => {
-  const userMatchRegex = /(@[U][A-Z0-9]+)/g;
-  var msg = event.attachments ? event.attachments[0] : event;
+const getBitbucketMessageQuote = (event) =>
+  event.attachments ? event.attachments[0] : undefined;
 
-  var reviewers = getReviewers(msg);
-  //var textToSearchIn = msg.text + reviewers;
-  var textToSearchIn = msg.text;
-  const matches = textToSearchIn.match(userMatchRegex);
+const getInvisionMessageQuote = (event) =>
+  event.attachments ? event.attachments[0] : undefined;
+
+const handleBitbucketMessage = (event) => {
+  const userMatchRegex = /(@[U][A-Z0-9]+)/g; // <@UA1BCDEF>
+  var msg = getBitbucketMessageQuote(event);
+
+  if (!msg || !userMatchRegex.test(_deburr(msg.text).toUpperCase())) return;
+
+  const matches = _deburr(msg.text).match(userMatchRegex);
 
   if (matches && matches.length >= 1) {
-
     const targets = matches.filter((v, i, a) => a.indexOf(v) === i);
 
-    for(var i=0; i<targets.length; i++) {
-      notifier.notify(event, targets[i].replace('<','').replace('>',''), msg.text);
+    for (var i = 0; i < targets.length; i++) {
+      const mention = targets[i].replace("<", "").replace(">", ""); // <@UA1BCDEF>
+      notifier.notify(event, mention, msg.text);
     }
   }
 };
 
 const handleJiraMessage = (event) => {
-  handleMessage(event, /(@[a-z][a-z.]*[a-z.])/g);
+  const userMatchRegex = /(@[A-Za-z]+)/g; // @MonsieurMister
+  var msg = getJiraMessageQuote(event);
+
+  if (!msg || !userMatchRegex.test(_deburr(msg.text).toLowerCase())) return;
+
+  const matches = _deburr(msg.text).match(userMatchRegex);
+
+  if (matches && matches.length >= 1) {
+    const targets = matches.filter((v, i, a) => a.indexOf(v) === i);
+
+    for (var i = 0; i < targets.length; i++) {
+      const mention = `@${_words(targets[i])
+        .map((w) => w.toLowerCase())
+        .join(".")}`;
+      notifier.notify(event, mention, msg.text);
+    }
+  }
 };
 
 const handleInvisionMessage = (event) => {
-  const attachment = event.attachments[0];
-  console.log(event.text);
-  const matches = attachment.text.match(/(@[A-Za-z]+)/g);
+  const userMatchRegex = /(@[A-Za-z]+)/g; // @MonsieurMister
+  const msg = getInvisionMessageQuote(event);
+
+  if (!msg || !userMatchRegex.test(_deburr(msg.text).toLowerCase())) return;
+
+  const matches = _deburr(msg.text).match(userMatchRegex);
 
   if (matches && matches.length >= 1) {
-
     const targets = matches
-      .map(m => m.split(/(?=[A-Z])/).join('.').replace('@.', '@').toLowerCase())
+      .map((m) =>
+        m
+          .split(/(?=[A-Z])/)
+          .join(".")
+          .replace("@.", "@")
+          .toLowerCase()
+      )
       .filter((v, i, a) => a.indexOf(v) === i);
 
-    for(var i=0; i<targets.length; i++) {
-      notifier.notify(event, targets[i], attachment.text);
+    for (var i = 0; i < targets.length; i++) {
+      const mention = targets[i];
+      notifier.notify(event, mention, attachment.text);
     }
   }
-
 };
 
 module.exports = {
   handleBitbucketMessage,
   handleJiraMessage,
   handleConfluenceMessage: handleBitbucketMessage,
-  handleInvisionMessage
-}
+  handleInvisionMessage,
+};
